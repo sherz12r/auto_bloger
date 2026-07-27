@@ -12,7 +12,7 @@ Content Planner
       │
       ├── Generate blog ideas
       ├── Check existing topics
-      ├── Check keywords
+      ├── Look for trending Topics
       ▼
 Database
       │
@@ -37,3 +37,31 @@ Quality Checker
       ├── SEO score
       ▼
 WordPress/API Publisher
+
+
+
+URL
+ |
+ ▼
+1. Crawl Website (Crawl4AI) ✅ DONE
+ |
+ ▼
+2. Extract Website Knowledge  ← NEXT
+ |
+ ▼
+3. AI Business Analyzer
+ |
+ ▼
+4. Keyword + Trend Research
+ |
+ ▼
+5. Topic Planner
+ |
+ ▼
+6. AI Blog Writer
+ |
+ ▼
+7. SEO Quality Checker
+ |
+ ▼
+8. WordPress Publisher
