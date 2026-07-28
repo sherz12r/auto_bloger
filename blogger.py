@@ -119,8 +119,8 @@ class SeoBot:
             )
 
 
-            self.save_knowledge(
-                website_data
+            self.save_file(
+                website_data, "website_knowledge"
             )
 
 
@@ -188,7 +188,12 @@ class SeoBot:
         
         google_trends = self.get_google_trends(seed)
 
+        refined_keywords = self.flatten_keywords(google_trends)
+        refined_keywords = self.remove_duplicates(refined_keywords)
+        self.save_file(refined_keywords, "keyword_database")
+        self._log(refined_keywords)
 
+        self._log("asking Ai to analyze keywords")
 
 
     def extract_website_data(self, crawl_result):
@@ -301,10 +306,15 @@ class SeoBot:
 
 
 
-    def save_knowledge(self, data):
+    def save_file(self, data, name):
 
+        os.makedirs(
+            "data",
+            exist_ok=True
+        )
+        
         with open(
-            "website_knowledge.json",
+            f"data/{name}.json",
             "w",
             encoding="utf-8"
         ) as file:
@@ -387,33 +397,12 @@ class SeoBot:
                 self._log(response)
                 analysis = json.loads(response)
 
-                self.save_business_analysis(analysis)
+                self.save_file(analysis, "business_analysis")
 
                 browser.close()
 
               
 
-    def save_business_analysis(self, data):
-
-        os.makedirs(
-            "data",
-            exist_ok=True
-        )
-
-
-        with open(
-            "business_analysis.json",
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            json.dump(
-                data,
-                f,
-                indent=4,
-                ensure_ascii=False
-            )
-    
     def chunk_list(self, items, size=5):
 
         for i in range(
@@ -518,7 +507,48 @@ class SeoBot:
 
         return results
 
+    
+    def load_google_suggestions():
 
+        with open(
+            "google_suggestions.json",
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            return json.load(file)
+
+    def flatten_keywords(self, data):
+
+        keywords = []
+
+        for seed, suggestions in data.items():
+
+            keywords.append(seed)
+
+            keywords.extend(suggestions)
+
+        return keywords
+
+    def remove_duplicates(self, keywords):
+
+        unique = []
+
+        seen = set()
+
+        for keyword in keywords:
+
+            keyword = keyword.lower().strip()
+
+            if keyword not in seen:
+
+                seen.add(keyword)
+
+                unique.append(keyword)
+
+        return unique
+
+  
 
     # def get_google_trends(self, keywords):
 
