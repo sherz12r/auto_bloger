@@ -81,7 +81,7 @@ class SeoBot:
 
     def analyze_website(self):
         # Check if knowledge already exists
-        if os.path.exists("website_knowledge.json"):
+        if os.path.exists("data/website_knowledge.json"):
 
             self._log(
                 "Existing website knowledge found. Loading..."
@@ -142,7 +142,7 @@ class SeoBot:
 
         self._log("Business Analyzer Prompt Created")
         self._log(analyzer)
-        if not os.path.exists("business_analysis.json"):
+        if not os.path.exists("data/business_analysis.json"):
 
             AI_response = self.ask_ai(analyzer)
 
