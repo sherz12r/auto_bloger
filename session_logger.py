@@ -55,7 +55,6 @@ def prune_old_logs(base_dir: str = ".", retention_days: int = RETENTION_DAYS) ->
         if not name.endswith(".log"):
             continue
         stem = name[len(PREFIX):-4]
-        # stem = name[:-4]
         try:
             file_date = datetime.strptime(stem, "%Y-%m-%d").date()
         except ValueError:

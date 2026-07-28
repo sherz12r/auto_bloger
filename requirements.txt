@@ -3,3 +3,4 @@ dotenv
 beautifulsoup4
 crawl4ai
 playwright
+selenium

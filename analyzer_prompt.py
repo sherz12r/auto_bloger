@@ -1,68 +1,78 @@
-import json
-
-
-def create_analyzer_prompt():
-
-    with open(
-        "website_knowledge.json",
-        "r",
-        encoding="utf-8"
-    ) as file:
-
-        website = json.load(file)
-
+def create_analyzer_prompt(website):
 
     prompt = f"""
-You are an SEO business analyst.
+You are an expert business analyst.
 
-Analyze this website information.
+Your job is NOT to write blogs.
 
-Website:
-{website.get('website')}
+Your job is ONLY to understand the business.
 
+Website
 
-Title:
-{website.get('title')}
+{website["website"]}
 
+Title
 
-Description:
-{website.get('description')}
+{website["title"]}
 
+Description
 
-Headings:
-{website.get('headings')}
+{website["description"]}
 
+Headings
 
-Content:
-{website.get('content')[:12000]}
+{website["headings"]}
 
+Content
 
-Return ONLY JSON.
+{website["content"][:10000]}
 
-Required format:
+-----------------------
+
+Return ONLY valid JSON.
+
+Do not explain anything.
+
+If something is unknown use null.
+
+Return exactly this schema.
 
 {{
-    "business_name":"",
-    "business_type":"",
-    "industry":"",
-    "products":[],
-    "services":[],
-    "target_audience":"",
-    "countries":"",
-    "brand_tone":"",
-    "main_keywords":[],
-    "existing_topics":[],
-    "recommended_blog_topics":[]
+    "company": {{
+        "name": "",
+        "website": "",
+        "industry": "",
+        "business_type": "",
+        "description": ""
+    }},
+
+    "audience": {{
+        "primary": [],
+        "secondary": []
+    }},
+
+    "offerings": {{
+        "services": [],
+        "products": []
+    }},
+
+    "locations": [],
+
+    "countries": [],
+
+    "important_entities": [],
+
+    "main_categories": [],
+
+    "pain_points": [],
+
+    "customer_questions": [],
+
+    "content_topics": [],
+
+    "internal_pages": []
 }}
 
 """
 
     return prompt
-
-
-
-if __name__ == "__main__":
-
-    prompt = create_analyzer_prompt()
-
-    print(prompt)

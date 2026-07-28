@@ -1,0 +1,139 @@
+{
+    "company": {
+        "name": "Fast Track Travel and Tourism",
+        "website": "[https://fasttracktourism.com](https://fasttracktourism.com)",
+        "industry": "Travel and Tourism",
+        "business_type": "Travel agency",
+        "description": "A travel agency based in Abu Dhabi providing UAE visa services, visa change services, international visas, holiday packages, travel activities, and tourism-related services with online booking and 24/7 customer support."
+    },
+    "audience": {
+        "primary": [
+            "International travelers visiting the UAE",
+            "Tourists planning holidays from the UAE",
+            "Residents in the UAE requiring visa change services",
+            "Individuals applying for UAE tourist visas",
+            "Travelers booking tours and activities in Dubai and Abu Dhabi"
+        ],
+        "secondary": [
+            "Business travelers",
+            "Families planning vacations",
+            "Residents seeking international visas",
+            "Travelers booking outbound holiday packages",
+            "Pilgrims seeking Umrah visas"
+        ]
+    },
+    "offerings": {
+        "services": [
+            "UAE visa services",
+            "Airport visa change",
+            "Oman visa change by bus",
+            "Visa change inside the UAE",
+            "International visa services",
+            "Holiday packages",
+            "Tours and sightseeing",
+            "Dubai activities booking",
+            "Abu Dhabi activities booking",
+            "Visa packages",
+            "Visa calculator",
+            "Travel consultation"
+        ],
+        "products": [
+            "3D2N Georgia Package",
+            "4D3N Armenia & Georgia Tour Package",
+            "3D2N Armenia Package",
+            "3D2N Azerbaijan Package",
+            "3D2N Kyrgyzstan Package",
+            "3D2N Kazakhstan Package",
+            "3D2N Samarkand Package",
+            "3D2N Tashkent Package",
+            "Maldives Package",
+            "Umrah Visa",
+            "Manila Dubai 90 Days Package"
+        ]
+    },
+    "locations": [
+        "Abu Dhabi",
+        "Dubai"
+    ],
+    "countries": [
+        "United Arab Emirates",
+        "Armenia",
+        "Georgia",
+        "Azerbaijan",
+        "Kazakhstan",
+        "Kyrgyzstan",
+        "Uzbekistan",
+        "Maldives",
+        "Oman",
+        "Philippines",
+        "Saudi Arabia"
+    ],
+    "important_entities": [
+        "Fast Track Travel and Tourism",
+        "Abu Dhabi",
+        "Dubai",
+        "United Arab Emirates",
+        "UAE Visa",
+        "Airport Visa Change",
+        "Oman Visa Change",
+        "International Visa",
+        "Umrah Visa",
+        "Visa Calculator"
+    ],
+    "main_categories": [
+        "Travel Agency",
+        "UAE Visa Services",
+        "Visa Change Services",
+        "International Visa Services",
+        "Holiday Packages",
+        "Tours",
+        "Travel Activities",
+        "Tourism"
+    ],
+    "pain_points": [
+        "Obtaining a UAE tourist visa",
+        "Managing visa expiry and visa changes",
+        "Finding affordable flights and holiday packages",
+        "Booking travel activities conveniently",
+        "Securing international travel visas",
+        "Planning multi-day vacations",
+        "Accessing reliable travel support",
+        "Completing travel bookings online securely"
+    ],
+    "customer_questions": [
+        "How can I apply for a UAE tourist visa?",
+        "How does the airport visa change process work?",
+        "Can I change my UAE visa without leaving the country?",
+        "What are the requirements for an international visa?",
+        "Which holiday packages are available?",
+        "What activities can I book in Dubai?",
+        "What activities can I book in Abu Dhabi?",
+        "How much does a visa cost?",
+        "How long does visa processing take?",
+        "How can I contact customer support?"
+    ],
+    "content_topics": [
+        "UAE visa guides",
+        "Visa change procedures",
+        "Travel requirements",
+        "Holiday package destinations",
+        "Dubai travel attractions",
+        "Abu Dhabi travel attractions",
+        "International visa information",
+        "Travel planning tips",
+        "Tourist activities",
+        "Travel booking guides"
+    ],
+    "internal_pages": [
+        "/",
+        "/uae-visa-service",
+        "/airport-visa-change",
+        "/international-visa",
+        "/holidays",
+        "/visa-calculator",
+        "/contact",
+        "/visa",
+        "/holiday",
+        "/fun-activities"
+    ]
+}

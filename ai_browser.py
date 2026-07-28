@@ -10,16 +10,7 @@ class AIBrowser:
         self.prompt = ""
 
 
-    def load_prompt(self):
-
-        with open(
-            "website_knowledge.json",
-            "r",
-            encoding="utf-8"
-        ) as f:
-
-            website = json.load(f)
-
+    def load_prompt(self, website):
 
         self.prompt = f"""
 
