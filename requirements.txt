@@ -3,4 +3,5 @@ dotenv
 beautifulsoup4
 crawl4ai
 playwright
-selenium
+pytrends
+urllib3==1.26.18

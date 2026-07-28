@@ -11,8 +11,10 @@ from analyzer_prompt import create_analyzer_prompt
 from playwright.sync_api import sync_playwright
 from selenium.webdriver.common.by import By
 import time
-
-
+from keyword_research import generate_keyword_seeds
+from pytrends.request import TrendReq
+import pandas as pd
+from random import uniform
 
 
 load_dotenv()
@@ -28,6 +30,11 @@ class SeoBot:
             self.url = "https://" + self.url
 
         self._log(f"URL: {self.url}")
+
+    def random_sleep():
+        time.sleep(uniform(9.8, 15.5))
+
+
 
     def write_header_log(self, title, width=70):
             self._log("=" * width)
@@ -136,12 +143,52 @@ class SeoBot:
         self._log("Business Analyzer Prompt Created")
         self._log(analyzer)
         if not os.path.exists("business_analysis.json"):
+
             AI_response = self.ask_ai(analyzer)
 
-            self._log("AI Response is below")
-            self._log(AI_response)
+
+            business = json.loads(
+                AI_response
+            )
+
+
+            with open(
+                "business_analysis.json",
+                "w",
+                encoding="utf-8"
+            ) as f:
+
+                json.dump(
+                    business,
+                    f,
+                    indent=4,
+                    ensure_ascii=False
+                )
+
+
+        else:
+
+            with open(
+                "business_analysis.json",
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                business = json.load(f)
+
+
+        seed = generate_keyword_seeds(
+            business
+        )
+
+        self._log("working on keywords")
+        self._log(f"keywords: {seed}")
+        self._log("keywords finished")
 
         
+        google_trends = self.get_google_trends(seed)
+
+
 
 
     def extract_website_data(self, crawl_result):
@@ -342,9 +389,9 @@ class SeoBot:
 
                 self.save_business_analysis(analysis)
 
-                input("ok")
-
                 browser.close()
+
+              
 
     def save_business_analysis(self, data):
 
@@ -367,7 +414,195 @@ class SeoBot:
                 ensure_ascii=False
             )
     
+    def chunk_list(self, items, size=5):
 
+        for i in range(
+            0,
+            len(items),
+            size
+        ):
+            yield items[i:i+size]
+
+
+    def get_google_trends(self, keywords):
+
+        results = {}
+
+        with sync_playwright() as p:
+
+            browser = p.chromium.launch(
+                headless=False
+            )
+
+            page = browser.new_page()
+
+            for keyword in keywords:
+
+                self._log(
+                    f"Searching: {keyword}"
+                )
+
+                try:
+
+                    page.goto(
+                        "https://www.google.com",
+                        wait_until="networkidle"
+                    )
+
+                    # Accept cookies if shown
+                    try:
+                        page.get_by_role(
+                            "button",
+                            name="Accept all"
+                        ).click(timeout=3000)
+                    except:
+                        pass
+
+                    search_box = page.locator(
+                        'textarea[name="q"]'
+                    )
+
+                    search_box.wait_for()
+
+                    search_box.fill(keyword)
+
+                    # Wait for autocomplete
+                    page.wait_for_timeout(2000)
+
+                    suggestions = []
+
+                    items = page.locator(
+                        'li[data-view-type="1"]'
+                    )
+
+                    count = items.count()
+
+                    for i in range(count):
+
+                        text = items.nth(i).inner_text().strip()
+
+                        if text and text not in suggestions:
+
+                            suggestions.append(text)
+
+                    results[keyword] = suggestions
+
+                    self._log(suggestions)
+
+                    time.sleep(2)
+
+                except Exception as e:
+
+                    self._log(
+                        f"Failed for {keyword}: {e}"
+                    )
+
+            browser.close()
+
+        with open(
+            "google_suggestions.json",
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                results,
+                f,
+                indent=4,
+                ensure_ascii=False
+            )
+
+        self._log(
+            "Saved google_suggestions.json"
+        )
+
+        return results
+
+
+
+    # def get_google_trends(self, keywords):
+
+    #     pytrend = TrendReq(
+    #         hl="en-US",
+    #         tz=360,
+    #         timeout=(10,25),
+    #         retries=2
+    #     )
+
+
+    #     all_results = []
+
+
+    #     for batch in self.chunk_list(keywords, 5):
+
+    #         self._log(
+    #             f"Checking batch: {batch}"
+    #         )
+
+
+    #         try:
+
+    #             pytrend.build_payload(
+    #                 batch,
+    #                 timeframe="today 12-m",
+    #                 geo="AE"
+    #             )
+
+
+    #             data = pytrend.interest_over_time()
+
+
+    #             if not data.empty:
+
+    #                 all_results.append(
+    #                     data
+    #                 )
+    #             input("first list")
+            
+
+
+    #         except Exception as e:
+
+    #             self._log(
+    #                 f"Failed: {e}"
+    #             )
+    #             self.random_sleep()
+    #         input("first list")
+
+
+
+    #     # ===========================
+    #     # ADD YOUR CODE HERE
+    #     # ===========================
+
+    #     if all_results:
+
+    #         result = pd.concat(
+    #             all_results,
+    #             axis=1
+    #         )
+
+
+    #         result.to_json(
+    #             "keywords_trends.json",
+    #             indent=4
+    #         )
+
+
+    #         self._log(
+    #             "Saved keywords_trends.json"
+    #         )
+
+
+    #     else:
+
+    #         self._log(
+    #             "No trend data found"
+    #         )
+
+
+
+    #     return all_results
 
 
 
