@@ -9,6 +9,8 @@ from session_logger import append_log_line
 import json
 from analyzer_prompt import create_analyzer_prompt
 from keyword_analyzer_prompt import create_keyword_analyzer_prompt
+from group_similar_keywords_analyzer_prompt import group_similar_keywords_analyzer_prompt
+
 from playwright.sync_api import sync_playwright
 from selenium.webdriver.common.by import By
 import time
@@ -91,125 +93,28 @@ class SeoBot:
         # if web['crawl_data'] is not None:
             domain = urlparse(web).hostname
             self._log(f"working for: {domain}")
-            if os.path.exists(f"data/{domain}_knowledge.json"):
+            website_data = self.get_website_knowledge(domain)
 
-                self._log(
-                    "Existing website knowledge found. Loading..."
-                )
-
-                with open(
-                    f"data/{domain}_knowledge.json",
-                    "r",
-                    encoding="utf-8"
-                ) as file:
-
-                    website_data = json.load(file)
-                # website_data = web['crawl_data']
-
-            else:
-
-                self._log(
-                    "No website knowledge found. Crawling website..."
-                )
-
-                crawl_result = asyncio.run(
-                    self.crawl_website()
-                )
-
-
-                if not crawl_result:
-                    self._log(
-                        "Website crawl failed"
-                    )
-                    return
-
-
-                website_data = self.extract_website_data(
-                    crawl_result
-                )
-
-                self._log(f"TYPE: {type(website_data)}")
-                self._log(f"DATA: {website_data}")
-                self.save_file(
-                    website_data, f"{domain}_knowledge"
-                )
-                self._log(
-                        "Website knowledge extracted successfully"
-                    )
-                # self.post_data(web['id'], json.dumps(
-                #                     website_data,
-                #                     indent=4
-                #                 ))
-
-
-                self._log(
-                    "Website knowledge extracted successfully"
-                )
-
-
-
-            self._log(
-                json.dumps(
-                    website_data,
-                    indent=4
-                )[:5000]
-            )
             self._log("Analyzing Webstie Content")
 
+            business = self.do_analysis(website_data, domain)
 
-            if not os.path.exists(f"data/{domain}_business_analysis.json"):
-                analyzer = create_analyzer_prompt(website_data)
-    
-                self._log("Business Analyzer Prompt Created")
-                self._log(analyzer)
-
-                AI_response = self.ask_ai(analyzer, domain)
-
-
-                business = json.loads(
-                    AI_response
-                )
-
-
-                with open(
-                    f"{domain}_business_analysis.json",
-                    "w",
-                    encoding="utf-8"
-                ) as f:
-
-                    json.dump(
-                        business,
-                        f,
-                        indent=4,
-                        ensure_ascii=False
-                    )
-
-
-            else:
-
-                with open(
-                    f"data/{domain}_business_analysis.json",
-                    "r",
-                    encoding="utf-8"
-                ) as f:
-
-                    business = json.load(f)
-
+            
             if not os.path.exists(f"data/{domain}_keyword_database.json"):
                 seed = generate_keyword_seeds(
                     business
                 )
 
-            self._log("working on keywords")
-            self._log(f"keywords: {seed}")
-            self._log("keywords finished")
+                self._log("working on keywords")
+                self._log(f"keywords: {seed}")
+                self._log("keywords finished")
 
-            google_trends = self.get_google_trends(seed)
+                google_trends = self.get_google_trends(seed)
 
-            refined_keywords = self.flatten_keywords(google_trends)
-            refined_keywords = self.remove_duplicates(refined_keywords)
-            self.save_file(refined_keywords, f"{domain}_keyword_database")
-            self._log(refined_keywords)
+                refined_keywords = self.flatten_keywords(google_trends)
+                refined_keywords = self.remove_duplicates(refined_keywords)
+                self.save_file(refined_keywords, f"{domain}_keyword_database")
+                self._log(refined_keywords)
         else:
             with open(
                 f"data/{domain}_keyword_database.json",
@@ -218,10 +123,228 @@ class SeoBot:
             ) as f:
 
                 refined_keywords = json.load(f)
-            
-            keyword_classification = create_keyword_analyzer_prompt(refined_keywords)
-            self._log("Keyword Analyzer Prompt Created")
-            self._log(keyword_classification)
+
+            analysis_file = f"data/{domain}_keyword_analysis.json"
+
+
+
+            # ----------------------------------------------------
+            # Final Keyword Clustering
+            # ----------------------------------------------------
+
+            final_keywords_file = f"data/{domain}_final_keywords.json"
+
+            if not os.path.exists(final_keywords_file):
+
+                self._log("Starting keyword grouping...")
+
+                all_final_keywords = []
+
+                keyword_chunks = list(self.chunk_list(refined_keywords, 70))
+
+                self._log(
+                    f"Total batches: {len(keyword_chunks)}"
+                )
+
+                for index, keywords in enumerate(keyword_chunks, start=1):
+
+                    self._log(
+                        f"Processing batch {index}/{len(keyword_chunks)} "
+                        f"({len(keywords)} keywords)"
+                    )
+
+                    prompt = group_similar_keywords_analyzer_prompt(
+                        keywords
+                    )
+
+                    AI_response = self.ask_ai(
+                        prompt,
+                        domain,
+                        "final_keywords"
+                    )
+
+                    if not AI_response:
+                        self._log(
+                            f"Batch {index} returned empty response."
+                        )
+                        continue
+
+                    try:
+
+                        batch_keywords = json.loads(AI_response)
+
+                        if isinstance(batch_keywords, list):
+                            all_final_keywords.extend(batch_keywords)
+                        else:
+                            self._log(
+                                f"Batch {index} returned invalid format."
+                            )
+
+                    except json.JSONDecodeError as e:
+
+                        self._log(
+                            f"Batch {index} JSON Error: {e}"
+                        )
+
+                        self._log(AI_response)
+
+                        continue
+
+                with open(
+                    final_keywords_file,
+                    "w",
+                    encoding="utf-8"
+                ) as f:
+
+                    json.dump(
+                        all_final_keywords,
+                        f,
+                        indent=4,
+                        ensure_ascii=False
+                    )
+
+                final_keywords = all_final_keywords
+
+                self._log(
+                    f"Finished grouping. "
+                    f"{len(final_keywords)} keyword groups created."
+                )
+
+            else:
+
+                self._log(
+                    "Loading existing keyword groups..."
+                )
+
+                with open(
+                    final_keywords_file,
+                    "r",
+                    encoding="utf-8"
+                ) as f:
+
+                    final_keywords = json.load(f)
+
+
+
+            # if not os.path.exists(f"data/{domain}_final_keywords.json"):
+                        
+            #     keyword_classification = group_similar_keywords_analyzer_prompt(refined_keywords)
+
+            #     AI_response = self.ask_ai(keyword_classification, domain, "final_keywords")
+            #     final_keywords = json.loads(
+            #                         AI_response
+            #                     )
+            #     with open(
+            #         f"{domain}_final_keywords.json",
+            #         "w",
+            #         encoding="utf-8"
+            #     ) as f:
+
+            #         json.dump(
+            #             business,
+            #             f,
+            #             indent=4,
+            #             ensure_ascii=False
+            #         )
+            # else:
+            #     with open(
+            #         f"data/{domain}_final_keywords.json",
+            #         "r",
+            #         encoding="utf-8"
+            #     ) as f:
+    
+            #         final_keywords = json.load(f)
+
+
+
+
+            if not os.path.exists(f"data/{domain}_keyword_analysis.json"):
+                self._log("Starting keyword analysis...")
+                all_keyword_analysis = []
+
+                # Split keywords into groups of 70
+                keyword_chunks = list(self.chunk_list(refined_keywords, 70))
+
+                self._log(f"Total keyword batches: {len(keyword_chunks)}")
+
+                for index, keywords in enumerate(keyword_chunks, start=1):
+
+                    self._log(
+                        f"Processing batch {index}/{len(keyword_chunks)} "
+                        f"({len(keywords)} keywords)"
+                    )
+
+                    prompt = create_keyword_analyzer_prompt(keywords)
+
+                    AI_response = self.ask_ai(
+                        prompt,
+                        domain,
+                        "keyword_analysis"
+                    )
+
+                    if not AI_response:
+                        self._log(f"Batch {index} returned empty response.")
+                        continue
+
+                    try:
+
+                        batch_analysis = json.loads(AI_response)
+
+                        if isinstance(batch_analysis, list):
+                            all_keyword_analysis.extend(batch_analysis)
+                        else:
+                            self._log(
+                                f"Batch {index} returned invalid format."
+                            )
+
+                    except json.JSONDecodeError as e:
+
+                        self._log(
+                            f"Batch {index} JSON Error: {e}"
+                        )
+
+                        self._log(AI_response)
+
+                        continue
+
+                # Save one final file
+
+                with open(
+                    analysis_file,
+                    "w",
+                    encoding="utf-8"
+                ) as f:
+
+                    json.dump(
+                        all_keyword_analysis,
+                        f,
+                        indent=4,
+                        ensure_ascii=False
+                    )
+
+                keyword_analysis = all_keyword_analysis
+
+                self._log(
+                    f"Finished keyword analysis. "
+                    f"{len(keyword_analysis)} keywords analyzed."
+                )
+
+            else:
+
+                self._log("Loading existing keyword analysis...")
+
+                with open(
+                    analysis_file,
+                    "r",
+                    encoding="utf-8"
+                ) as f:
+
+                    keyword_analysis = json.load(f)
+
+
+
+                self._log("Keyword Analyzer Prompt Created")
+                self._log(final_keywords)
 
             self._log("asking Ai to analyze keywords")
 
@@ -356,7 +479,7 @@ class SeoBot:
                 ensure_ascii=False
             )
 
-    def ask_ai(self, content, domain):
+    def ask_ai(self, content, domain, filename):
     
             with sync_playwright() as p:
     
@@ -427,7 +550,7 @@ class SeoBot:
                 self._log(response)
                 analysis = json.loads(response)
 
-                self.save_file(analysis, f"{domain}_business_analysis")
+                self.save_file(analysis, f"{domain}_{filename}")
 
                 browser.close()
 
@@ -435,14 +558,12 @@ class SeoBot:
 
               
 
-    def chunk_list(self, items, size=5):
-
-        for i in range(
-            0,
-            len(items),
-            size
-        ):
-            yield items[i:i+size]
+    def chunk_list(self, data, chunk_size=20):
+        """
+        Split a list into chunks.
+        """
+        for i in range(0, len(data), chunk_size):
+            yield data[i:i + chunk_size]
 
 
     def get_google_trends(self, keywords):
@@ -610,11 +731,112 @@ class SeoBot:
         )
         self._log(f"data posted successfully api response: {response}")
 
-    def get_headers(seld):
+    def get_headers(self):
         return {
             "X-API-KEY": os.getenv("X-API-KEY"),
             "Accept": "application/json"
         }
+    
+
+    def get_website_knowledge(self, domain):
+        if os.path.exists(f"data/{domain}_knowledge.json"):
+            self._log(
+                "Existing website knowledge found. Loading..."
+            )
+
+            with open(
+                f"data/{domain}_knowledge.json",
+                "r",
+                encoding="utf-8"
+            ) as file:
+
+                return json.load(file)
+
+        else:
+
+            self._log(
+                "No website knowledge found. Crawling website..."
+            )
+
+            crawl_result = asyncio.run(
+                self.crawl_website()
+            )
+
+
+            if not crawl_result:
+                self._log(
+                    "Website crawl failed"
+                )
+                return
+
+
+            website_data = self.extract_website_data(
+                crawl_result
+            )
+
+            self._log(f"TYPE: {type(website_data)}")
+            self._log(f"DATA: {website_data}")
+            self.save_file(
+                website_data, f"{domain}_knowledge"
+            )
+            self._log(
+                    "Website knowledge extracted successfully"
+                )
+
+            self._log(
+                "Website knowledge extracted successfully"
+            )
+
+
+
+        self._log(
+            json.dumps(
+                website_data,
+                indent=4
+            )[:5000]
+        )
+        return website_data
+
+
+    def do_analysis(self, website_data, domain):
+        if not os.path.exists(f"data/{domain}_business_analysis.json"):
+            analyzer = create_analyzer_prompt(website_data)
+
+            self._log("Business Analyzer Prompt Created")
+            self._log(analyzer)
+
+            AI_response = self.ask_ai(analyzer, domain, "business_analysis")
+
+
+            business = json.loads(
+                AI_response
+            )
+
+
+            with open(
+                f"data/{domain}_business_analysis.json",
+                "w",
+                encoding="utf-8"
+            ) as f:
+
+                json.dump(
+                    business,
+                    f,
+                    indent=4,
+                    ensure_ascii=False
+                )
+
+            return business
+
+        else:
+
+            with open(
+                f"data/{domain}_business_analysis.json",
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                return json.load(f)
 
 
 bot = SeoBot()

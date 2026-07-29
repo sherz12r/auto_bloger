@@ -1,7 +1,10 @@
 def create_keyword_analyzer_prompt(website):
 
     prompt = f"""
+    You are an SEO expert.
 Analyze these keywords.
+
+remove all dublicates even 60% similar remove and chose best keyword between them as final keyword
 
 For each keyword return:
 
@@ -19,7 +22,7 @@ content_type:
 
 priority_score
 
-{website["website"]}
+{website}
 
 -----------------------
 
@@ -31,18 +34,18 @@ If something is unknown use null.
 
 Return exactly this schema.
 [
- {
+ {{
    "keyword":"dubai airport transfer",
    "intent":"commercial",
    "content_type":"service",
    "priority":95
- },
- {
+ }},
+ {{
    "keyword":"things to do in dubai",
    "intent":"informational",
    "content_type":"guide",
    "priority":85
- }
+ }}
 ]
 """
 
