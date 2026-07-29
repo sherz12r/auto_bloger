@@ -8,6 +8,7 @@ from app_paths import get_app_dir
 from session_logger import append_log_line
 import json
 from analyzer_prompt import create_analyzer_prompt
+from keyword_analyzer_prompt import create_keyword_analyzer_prompt
 from playwright.sync_api import sync_playwright
 from selenium.webdriver.common.by import By
 import time
@@ -15,6 +16,7 @@ from keyword_research import generate_keyword_seeds
 from pytrends.request import TrendReq
 import pandas as pd
 from random import uniform
+from urllib.parse import urlparse
 
 
 load_dotenv()
@@ -79,121 +81,149 @@ class SeoBot:
 
             return crawl_result
 
-    def analyze_website(self):
+    def do_seo(self):
         # Check if knowledge already exists
-        if os.path.exists("data/website_knowledge.json"):
+        self.write_header_log(
+                    "Bot Started"
+                )
+        websites = self.get_websites()
+        for web in websites:
+        # if web['crawl_data'] is not None:
+            domain = urlparse(web).hostname
+            self._log(f"working for: {domain}")
+            if os.path.exists(f"data/{domain}_knowledge.json"):
 
-            self._log(
-                "Existing website knowledge found. Loading..."
-            )
-
-            with open(
-                "website_knowledge.json",
-                "r",
-                encoding="utf-8"
-            ) as file:
-
-                website_data = json.load(file)
-
-
-        else:
-
-            self._log(
-                "No website knowledge found. Crawling website..."
-            )
-
-            crawl_result = asyncio.run(
-                self.crawl_website()
-            )
-
-
-            if not crawl_result:
                 self._log(
-                    "Website crawl failed"
+                    "Existing website knowledge found. Loading..."
                 )
-                return
+
+                with open(
+                    f"data/{domain}_knowledge.json",
+                    "r",
+                    encoding="utf-8"
+                ) as file:
+
+                    website_data = json.load(file)
+                # website_data = web['crawl_data']
+
+            else:
+
+                self._log(
+                    "No website knowledge found. Crawling website..."
+                )
+
+                crawl_result = asyncio.run(
+                    self.crawl_website()
+                )
 
 
-            website_data = self.extract_website_data(
-                crawl_result
-            )
+                if not crawl_result:
+                    self._log(
+                        "Website crawl failed"
+                    )
+                    return
 
 
-            self.save_file(
-                website_data, "website_knowledge"
-            )
+                website_data = self.extract_website_data(
+                    crawl_result
+                )
+
+                self._log(f"TYPE: {type(website_data)}")
+                self._log(f"DATA: {website_data}")
+                self.save_file(
+                    website_data, f"{domain}_knowledge"
+                )
+                self._log(
+                        "Website knowledge extracted successfully"
+                    )
+                # self.post_data(web['id'], json.dumps(
+                #                     website_data,
+                #                     indent=4
+                #                 ))
+
+
+                self._log(
+                    "Website knowledge extracted successfully"
+                )
+
 
 
             self._log(
-                "Website knowledge extracted successfully"
+                json.dumps(
+                    website_data,
+                    indent=4
+                )[:5000]
             )
+            self._log("Analyzing Webstie Content")
 
 
+            if not os.path.exists(f"data/{domain}_business_analysis.json"):
+                analyzer = create_analyzer_prompt(website_data)
+    
+                self._log("Business Analyzer Prompt Created")
+                self._log(analyzer)
 
-        self._log(
-            json.dumps(
-                website_data,
-                indent=4
-            )[:3000]
-        )
-        self._log("Analyzing Webstie Content")
-
-        analyzer = create_analyzer_prompt(website_data)
-
-        self._log("Business Analyzer Prompt Created")
-        self._log(analyzer)
-        if not os.path.exists("data/business_analysis.json"):
-
-            AI_response = self.ask_ai(analyzer)
+                AI_response = self.ask_ai(analyzer, domain)
 
 
-            business = json.loads(
-                AI_response
-            )
-
-
-            with open(
-                "business_analysis.json",
-                "w",
-                encoding="utf-8"
-            ) as f:
-
-                json.dump(
-                    business,
-                    f,
-                    indent=4,
-                    ensure_ascii=False
+                business = json.loads(
+                    AI_response
                 )
 
 
-        else:
+                with open(
+                    f"{domain}_business_analysis.json",
+                    "w",
+                    encoding="utf-8"
+                ) as f:
 
+                    json.dump(
+                        business,
+                        f,
+                        indent=4,
+                        ensure_ascii=False
+                    )
+
+
+            else:
+
+                with open(
+                    f"data/{domain}_business_analysis.json",
+                    "r",
+                    encoding="utf-8"
+                ) as f:
+
+                    business = json.load(f)
+
+            if not os.path.exists(f"data/{domain}_keyword_database.json"):
+                seed = generate_keyword_seeds(
+                    business
+                )
+
+            self._log("working on keywords")
+            self._log(f"keywords: {seed}")
+            self._log("keywords finished")
+
+            google_trends = self.get_google_trends(seed)
+
+            refined_keywords = self.flatten_keywords(google_trends)
+            refined_keywords = self.remove_duplicates(refined_keywords)
+            self.save_file(refined_keywords, f"{domain}_keyword_database")
+            self._log(refined_keywords)
+        else:
             with open(
-                "business_analysis.json",
+                f"data/{domain}_keyword_database.json",
                 "r",
                 encoding="utf-8"
             ) as f:
 
-                business = json.load(f)
+                refined_keywords = json.load(f)
+            
+            keyword_classification = create_keyword_analyzer_prompt(refined_keywords)
+            self._log("Keyword Analyzer Prompt Created")
+            self._log(keyword_classification)
 
-
-        seed = generate_keyword_seeds(
-            business
-        )
-
-        self._log("working on keywords")
-        self._log(f"keywords: {seed}")
-        self._log("keywords finished")
-
-        
-        google_trends = self.get_google_trends(seed)
-
-        refined_keywords = self.flatten_keywords(google_trends)
-        refined_keywords = self.remove_duplicates(refined_keywords)
-        self.save_file(refined_keywords, "keyword_database")
-        self._log(refined_keywords)
-
-        self._log("asking Ai to analyze keywords")
+            self._log("asking Ai to analyze keywords")
 
 
     def extract_website_data(self, crawl_result):
@@ -326,7 +356,7 @@ class SeoBot:
                 ensure_ascii=False
             )
 
-    def ask_ai(self, content):
+    def ask_ai(self, content, domain):
     
             with sync_playwright() as p:
     
@@ -341,7 +371,7 @@ class SeoBot:
                 )
 
     
-                page = browser.new_page()
+                page = context.new_page()
     
     
                 page.goto(
@@ -397,9 +427,11 @@ class SeoBot:
                 self._log(response)
                 analysis = json.loads(response)
 
-                self.save_file(analysis, "business_analysis")
+                self.save_file(analysis, f"{domain}_business_analysis")
 
                 browser.close()
+
+                return response
 
               
 
@@ -548,93 +580,42 @@ class SeoBot:
 
         return unique
 
-  
 
-    # def get_google_trends(self, keywords):
+    def get_websites(self):
+        self._log("getting websites")
+        try:
+            # response = requests.get(
+            #     os.getenv("GET_API"),
+            #     headers=self.get_headers(),
+            #     timeout=30
+            # )
+            # websites = response.json()
+            # self._log(f"websites: {websites}")
+            # return websites
+            return os.getenv("URL").split(",")
+        
+        except Exception as e:
+            self._log(f"Error: {e}")
 
-    #     pytrend = TrendReq(
-    #         hl="en-US",
-    #         tz=360,
-    #         timeout=(10,25),
-    #         retries=2
-    #     )
+    def post_data(self, id, data):
+        prams = {
+            "id": id,
+            "crawler": data,
+        }
 
+        response = requests.post(
+            os.getenv("POST_API"),
+            params=prams,
+            headers=self.get_headers()
+        )
+        self._log(f"data posted successfully api response: {response}")
 
-    #     all_results = []
-
-
-    #     for batch in self.chunk_list(keywords, 5):
-
-    #         self._log(
-    #             f"Checking batch: {batch}"
-    #         )
-
-
-    #         try:
-
-    #             pytrend.build_payload(
-    #                 batch,
-    #                 timeframe="today 12-m",
-    #                 geo="AE"
-    #             )
-
-
-    #             data = pytrend.interest_over_time()
-
-
-    #             if not data.empty:
-
-    #                 all_results.append(
-    #                     data
-    #                 )
-    #             input("first list")
-            
-
-
-    #         except Exception as e:
-
-    #             self._log(
-    #                 f"Failed: {e}"
-    #             )
-    #             self.random_sleep()
-    #         input("first list")
-
-
-
-    #     # ===========================
-    #     # ADD YOUR CODE HERE
-    #     # ===========================
-
-    #     if all_results:
-
-    #         result = pd.concat(
-    #             all_results,
-    #             axis=1
-    #         )
-
-
-    #         result.to_json(
-    #             "keywords_trends.json",
-    #             indent=4
-    #         )
-
-
-    #         self._log(
-    #             "Saved keywords_trends.json"
-    #         )
-
-
-    #     else:
-
-    #         self._log(
-    #             "No trend data found"
-    #         )
-
-
-
-    #     return all_results
-
+    def get_headers(seld):
+        return {
+            "X-API-KEY": os.getenv("X-API-KEY"),
+            "Accept": "application/json"
+        }
 
 
 bot = SeoBot()
-bot.analyze_website()
+bot.do_seo()
