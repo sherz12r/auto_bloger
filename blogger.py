@@ -89,6 +89,7 @@ class SeoBot:
             self.write_header_log(
                     "Bot Started"
                 )
+            self.start_ai_browser()
             websites = self.get_websites()
             for web in websites:
             # if web['crawl_data'] is not None:
