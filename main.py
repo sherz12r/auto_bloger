@@ -4,13 +4,12 @@ import requests
 from bs4 import BeautifulSoup
 import asyncio
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
-from app_paths import get_app_dir
 from session_logger import append_log_line
 import json
 from analyzer_prompt import create_analyzer_prompt
 from keyword_analyzer_prompt import create_keyword_analyzer_prompt
 from group_similar_keywords_analyzer_prompt import group_similar_keywords_analyzer_prompt
-
+from seo_audit import SEOAuditor
 from playwright.sync_api import sync_playwright
 from selenium.webdriver.common.by import By
 import time
@@ -19,13 +18,17 @@ from pytrends.request import TrendReq
 import pandas as pd
 from random import uniform
 from urllib.parse import urlparse
-
+from session_logger import _log
 
 load_dotenv()
 
 class SeoBot:
     def __init__(self):
         self.url = os.getenv("URL")
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
 
         if not self.url:
             raise ValueError("URL not found in .env")
@@ -33,27 +36,17 @@ class SeoBot:
         if not self.url.startswith(("http://", "https://")):
             self.url = "https://" + self.url
 
-        self._log(f"URL: {self.url}")
+        _log(f"URL: {self.url}")
 
     def random_sleep():
         time.sleep(uniform(9.8, 15.5))
 
-
-
     def write_header_log(self, title, width=70):
-            self._log("=" * width)
-            self._log(title.center(width))
-            self._log("=" * width)
+        _log("=" * width)
+        _log(title.center(width))
+        _log("=" * width)
 
-        
-    def _log(self, message):
-        print(f"[Seo Blogger] {message}")
-
-        try:
-            SCRIPT_DIR = get_app_dir()
-            append_log_line(message, SCRIPT_DIR)
-        except OSError:
-            pass
+  
 
     async def crawl_website(self):
 
@@ -66,7 +59,7 @@ class SeoBot:
             crawl = result[0]
 
             if not crawl.success:
-                self._log(
+                _log(
                     f"Crawl failed: {crawl.error_message}"
                 )
                 return None
@@ -89,12 +82,11 @@ class SeoBot:
             self.write_header_log(
                     "Bot Started"
                 )
-            self.start_ai_browser()
             websites = self.get_websites()
             for web in websites:
             # if web['crawl_data'] is not None:
                 domain = urlparse(web).hostname
-                self._log(f"working for: {domain}")
+                _log(f"working for: {domain}")
                 website_data = self.get_website_knowledge(domain)
 
                 # NEW STEP
@@ -104,23 +96,38 @@ class SeoBot:
                     website_data
                 )
 
+                self.save_file(seo_audit, f"{domain}_seo_audit")
 
-                seo_recommendations = self.generate_seo_recommendations(
-                    domain,
-                    seo_audit
-                )
+                seo_recommendations = f"data/{domain}_seo_recommendations.json"
+
+                # --------------------------------------------
+                # Load Existing Topics
+                # --------------------------------------------
+                if not os.path.exists(seo_recommendations):
+
+                    seo_recommendations = self.generate_seo_recommendations(
+                        domain,
+                        seo_audit
+                    )
+
+                else:
+                    _log("No SEO recommendations generated")
+                    seo_recommendations = {}
 
 
-                self._log("Analyzing Webstie Content")
+                _log("Analyzing Webstie Content")
 
                 business = self.do_analysis(website_data, domain)
+                _log("analysis done")
 
                 keywords = self.get_or_create_keyword_database(domain, business)
+
+                _log("kaywords database created")
 
                 topics = self.get_or_create_topics(domain, business, keywords)
 
                 # 5. Blogs
-                blogs = self.get_or_create_blogs(domain, business, topics)
+                blogs = self.get_or_create_blogs(domain, business, topics, limit=2)
 
                 # 6. SEO Check
                 checked_blogs = self.check_all_blogs(domain, blogs)
@@ -128,224 +135,10 @@ class SeoBot:
                 # 7. Publish
                 self.publish_pending_blogs(domain, checked_blogs)
 
-                self._log(f"{domain} completed successfully.")
+                _log(f"{domain} completed successfully.")
                 
-            #     if not os.path.exists(f"data/{domain}_keyword_database.json"):
-            #         seed = generate_keyword_seeds(
-            #             business
-            #         )
 
-            #         self._log("working on keywords")
-            #         self._log(f"keywords: {seed}")
-            #         self._log("keywords finished")
-
-            #         google_trends = self.get_google_trends(seed)
-
-            #         refined_keywords = self.flatten_keywords(google_trends)
-            #         refined_keywords = self.remove_duplicates(refined_keywords)
-            #         self.save_file(refined_keywords, f"{domain}_keyword_database")
-            #         self._log(refined_keywords)
-            # else:
-            #     with open(
-            #         f"data/{domain}_keyword_database.json",
-            #         "r",
-            #         encoding="utf-8"
-            #     ) as f:
-
-            #         refined_keywords = json.load(f)
-
-                # analysis_file = f"data/{domain}_keyword_analysis.json"
-
-
-
-                # # ----------------------------------------------------
-                # # Final Keyword Clustering
-                # # ----------------------------------------------------
-
-                # final_keywords_file = f"data/{domain}_final_keywords.json"
-
-                # if not os.path.exists(final_keywords_file):
-
-                #     self._log("Starting keyword grouping...")
-
-                #     all_final_keywords = []
-
-                #     keyword_chunks = list(self.chunk_list(refined_keywords, 70))
-
-                #     self._log(
-                #         f"Total batches: {len(keyword_chunks)}"
-                #     )
-
-                #     for index, keywords in enumerate(keyword_chunks, start=1):
-
-                #         self._log(
-                #             f"Processing batch {index}/{len(keyword_chunks)} "
-                #             f"({len(keywords)} keywords)"
-                #         )
-
-                #         prompt = group_similar_keywords_analyzer_prompt(
-                #             keywords
-                #         )
-
-                #         AI_response = self.ask_ai(
-                #             prompt,
-                #             domain,
-                #             "final_keywords"
-                #         )
-
-                #         if not AI_response:
-                #             self._log(
-                #                 f"Batch {index} returned empty response."
-                #             )
-                #             continue
-
-                #         try:
-
-                #             batch_keywords = json.loads(AI_response)
-
-                #             if isinstance(batch_keywords, list):
-                #                 all_final_keywords.extend(batch_keywords)
-                #             else:
-                #                 self._log(
-                #                     f"Batch {index} returned invalid format."
-                #                 )
-
-                #         except json.JSONDecodeError as e:
-
-                #             self._log(
-                #                 f"Batch {index} JSON Error: {e}"
-                #             )
-
-                #             self._log(AI_response)
-
-                #             continue
-
-                #     with open(
-                #         final_keywords_file,
-                #         "w",
-                #         encoding="utf-8"
-                #     ) as f:
-
-                #         json.dump(
-                #             all_final_keywords,
-                #             f,
-                #             indent=4,
-                #             ensure_ascii=False
-                #         )
-
-                #     final_keywords = all_final_keywords
-
-                #     self._log(
-                #         f"Finished grouping. "
-                #         f"{len(final_keywords)} keyword groups created."
-                #     )
-
-                # else:
-
-                #     self._log(
-                #         "Loading existing keyword groups..."
-                #     )
-
-                #     with open(
-                #         final_keywords_file,
-                #         "r",
-                #         encoding="utf-8"
-                #     ) as f:
-
-                #         final_keywords = json.load(f)
-
-
-
-
-                # if not os.path.exists(f"data/{domain}_keyword_analysis.json"):
-                #     self._log("Starting keyword analysis...")
-                #     all_keyword_analysis = []
-
-                #     # Split keywords into groups of 70
-                #     keyword_chunks = list(self.chunk_list(refined_keywords, 70))
-
-                #     self._log(f"Total keyword batches: {len(keyword_chunks)}")
-
-                #     for index, keywords in enumerate(keyword_chunks, start=1):
-
-                #         self._log(
-                #             f"Processing batch {index}/{len(keyword_chunks)} "
-                #             f"({len(keywords)} keywords)"
-                #         )
-
-                #         prompt = create_keyword_analyzer_prompt(keywords)
-
-                #         AI_response = self.ask_ai(
-                #             prompt,
-                #             domain,
-                #             "keyword_analysis"
-                #         )
-
-                #         if not AI_response:
-                #             self._log(f"Batch {index} returned empty response.")
-                #             continue
-
-                #         try:
-
-                #             batch_analysis = json.loads(AI_response)
-
-                #             if isinstance(batch_analysis, list):
-                #                 all_keyword_analysis.extend(batch_analysis)
-                #             else:
-                #                 self._log(
-                #                     f"Batch {index} returned invalid format."
-                #                 )
-
-                #         except json.JSONDecodeError as e:
-
-                #             self._log(
-                #                 f"Batch {index} JSON Error: {e}"
-                #             )
-
-                #             self._log(AI_response)
-
-                #             continue
-
-                #     # Save one final file
-
-                #     with open(
-                #         analysis_file,
-                #         "w",
-                #         encoding="utf-8"
-                #     ) as f:
-
-                #         json.dump(
-                #             all_keyword_analysis,
-                #             f,
-                #             indent=4,
-                #             ensure_ascii=False
-                #         )
-
-                #     keyword_analysis = all_keyword_analysis
-
-                #     self._log(
-                #         f"Finished keyword analysis. "
-                #         f"{len(keyword_analysis)} keywords analyzed."
-                #     )
-
-                # else:
-
-                #     self._log("Loading existing keyword analysis...")
-
-                #     with open(
-                #         analysis_file,
-                #         "r",
-                #         encoding="utf-8"
-                #     ) as f:
-
-                #         keyword_analysis = json.load(f)
-
-
-
-                    # self._log("Keyword Analyzer Prompt Created")
-                    # self._log(final_keywords)
-
-                self._log("asking Ai to analyze keywords")
+                _log("asking Ai to analyze keywords")
         finally:
 
             self.close_ai_browser()
@@ -481,84 +274,208 @@ class SeoBot:
                 ensure_ascii=False
             )
 
+    
     def ask_ai(self, content, domain, filename):
     
-            with sync_playwright() as p:
-    
-                # browser = p.chromium.launch(
-                #     headless=False
-                # )
-                # context = browser.new_context(
-                #     permissions=[
-                #         "clipboard-read",
-                #         "clipboard-write"
-                #     ]
-                # )
+        with sync_playwright() as p:
 
-    
-                # page = context.new_page()
-    
-    
-                # page.goto(
-                #     "https://chat.openai.com"
-                # )
-    
-    
-                # page.wait_for_timeout(5000)
-
-                page = self.page
-
-                editor = page.locator(
-                    "[contenteditable='true']"
-                )
+            browser = p.chromium.launch(
+                headless=False
+            )
+            context = browser.new_context(
+                permissions=[
+                    "clipboard-read",
+                    "clipboard-write"
+                ]
+            )
 
 
-                editor.wait_for(
-                    state="visible",
-                    timeout=30000
-                )
+            page = context.new_page()
 
 
-                # editor.fill(content)
-                editor.click()
-
-                page.keyboard.insert_text(content)
-
-                # time.sleep(3)
-                page.wait_for_timeout(2000)
-
-                page.keyboard.press("Enter")
-
-                page.wait_for_timeout(10000)
-
-                copy_button = page.locator(
-                    'button[aria-label="Copy response"]'
-                ).last
-
-                copy_button.wait_for(
-                    state="visible",
-                    timeout=30000
-                )
-                copy_button.scroll_into_view_if_needed()
-
-                copy_button.click()
-
-                page.wait_for_timeout(1000)
-
-                response = page.evaluate(
-                    "navigator.clipboard.readText()"
-                )
+            page.goto(
+                "https://chat.openai.com"
+            )
 
 
-                self._log("writing ai response")
-                self._log(response)
+            page.wait_for_timeout(5000)
+
+            editor = page.locator(
+                "[contenteditable='true']"
+            )
+
+
+            editor.wait_for(
+                state="visible",
+                timeout=30000
+            )
+
+
+            # editor.fill(content)
+            editor.click()
+
+            page.keyboard.insert_text(content)
+
+            # time.sleep(3)
+            page.wait_for_timeout(5000)
+
+            page.keyboard.press("Enter")
+
+            page.wait_for_timeout(10000)
+
+            copy_button = page.locator(
+                'button[aria-label="Copy response"]'
+            ).last
+
+            copy_button.wait_for(
+                state="visible",
+                timeout=30000
+            )
+            copy_button.scroll_into_view_if_needed()
+
+            copy_button.click()
+
+            page.wait_for_timeout(1000)
+
+            response = page.evaluate(
+                "navigator.clipboard.readText()"
+            )
+
+
+            _log("writing ai response")
+            _log(response)
+           # Make sure response exists
+            if response is None:
+                raise Exception("Response is None")
+
+            response = response.strip()
+
+            if not response:
+                raise Exception("Response is empty")
+
+            # Remove Markdown code fences if present
+            if response.startswith("```"):
+                lines = response.splitlines()
+
+                # Remove opening fence (``` or ```json)
+                if lines and lines[0].startswith("```"):
+                    lines = lines[1:]
+
+                # Remove closing fence
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+
+                response = "\n".join(lines).strip()
+
+            print("Response received:")
+            print(response)
+
+            try:
                 analysis = json.loads(response)
 
-                self.save_file(analysis, f"{domain}_{filename}")
+            except json.JSONDecodeError as e:
+                print("JSON parsing failed")
+                print("Error:", e)
+                print("Raw response:")
+                print(repr(response))
+                raise
 
-                # browser.close()
+            self.save_file(analysis, f"{domain}_{filename}")
 
-                return response
+            browser.close()
+
+            return response
+    # def ask_ai(self, content, domain, filename):
+    #         if self.browser is None or not self.browser.is_connected():
+    #             self.start_ai_browser()
+            
+    #         # with sync_playwright() as p:
+
+    #         page = self.page
+
+    #         editor = page.locator(
+    #             "[contenteditable='true']"
+    #         )
+
+
+    #         editor.wait_for(
+    #             state="visible",
+    #             timeout=30000
+    #         )
+
+
+    #         # editor.fill(content)
+    #         editor.click()
+
+    #         page.keyboard.insert_text(content)
+
+    #         # time.sleep(3)
+    #         page.wait_for_timeout(2000)
+
+    #         page.keyboard.press("Enter")
+
+    #         page.wait_for_timeout(10000)
+
+    #         # copy_button = page.locator(
+    #         #     'button[aria-label="Copy response"]'
+    #         # ).last
+    #         copy_buttons = page.locator(
+    #             'button[aria-label="Copy response"]:visible'
+    #         )
+
+    #         count = copy_buttons.count()
+
+    #         _log(f"Copy buttons found: {count}")
+
+    #         if count == 0:
+    #             raise Exception("No copy button found")
+
+    #         copy_button = copy_buttons.nth(count - 1)
+
+    #         copy_button.wait_for(
+    #             state="visible",
+    #             timeout=30000
+    #         )
+    #         copy_button.scroll_into_view_if_needed()
+
+    #         copy_button.click()
+
+    #         page.wait_for_timeout(1000)
+
+    #         response = page.evaluate(
+    #             "navigator.clipboard.readText()"
+    #         )
+
+
+    #         _log("writing ai response")
+    #         _log(response)
+
+    #         # Remove markdown code blocks from AI response
+    #         response = response.strip()
+
+    #         if response.startswith("```json"):
+    #             response = response.replace("```json", "", 1)
+
+    #         if response.endswith("```"):
+    #             response = response[:-3]
+
+    #         response = response.strip()
+
+
+    #         try:
+    #             analysis = json.loads(response)
+
+    #         except json.JSONDecodeError as e:
+    #             _log(f"JSON Error: {e}")
+    #             _log(repr(response))
+    #             return {}
+
+    #         self.save_file(
+    #             analysis,
+    #             f"{domain}_{filename}"
+    #         )
+
+    #         return analysis
 
               
 
@@ -584,7 +501,7 @@ class SeoBot:
 
             for keyword in keywords:
 
-                self._log(
+                _log(
                     f"Searching: {keyword}"
                 )
 
@@ -633,17 +550,17 @@ class SeoBot:
 
                     results[keyword] = suggestions
 
-                    self._log(suggestions)
+                    _log(suggestions)
 
                     time.sleep(2)
 
                 except Exception as e:
 
-                    self._log(
+                    _log(
                         f"Failed for {keyword}: {e}"
                     )
-
-            browser.close()
+            
+            self.browser.close()
 
         with open(
             "google_suggestions.json",
@@ -658,7 +575,7 @@ class SeoBot:
                 ensure_ascii=False
             )
 
-        self._log(
+        _log(
             "Saved google_suggestions.json"
         )
 
@@ -707,7 +624,7 @@ class SeoBot:
 
 
     def get_websites(self):
-        self._log("getting websites")
+        _log("getting websites")
         try:
             # response = requests.get(
             #     os.getenv("GET_API"),
@@ -715,12 +632,12 @@ class SeoBot:
             #     timeout=30
             # )
             # websites = response.json()
-            # self._log(f"websites: {websites}")
+            # _log(f"websites: {websites}")
             # return websites
             return os.getenv("URL").split(",")
         
         except Exception as e:
-            self._log(f"Error: {e}")
+            _log(f"Error: {e}")
 
     def post_data(self, id, data):
         prams = {
@@ -733,7 +650,7 @@ class SeoBot:
             params=prams,
             headers=self.get_headers()
         )
-        self._log(f"data posted successfully api response: {response}")
+        _log(f"data posted successfully api response: {response}")
 
     def get_headers(self):
         return {
@@ -744,7 +661,7 @@ class SeoBot:
 
     def get_website_knowledge(self, domain):
         if os.path.exists(f"data/{domain}_knowledge.json"):
-            self._log(
+            _log(
                 "Existing website knowledge found. Loading..."
             )
 
@@ -758,7 +675,7 @@ class SeoBot:
 
         else:
 
-            self._log(
+            _log(
                 "No website knowledge found. Crawling website..."
             )
 
@@ -768,7 +685,7 @@ class SeoBot:
 
 
             if not crawl_result:
-                self._log(
+                _log(
                     "Website crawl failed"
                 )
                 return
@@ -778,22 +695,22 @@ class SeoBot:
                 crawl_result
             )
 
-            self._log(f"TYPE: {type(website_data)}")
-            self._log(f"DATA: {website_data}")
+            _log(f"TYPE: {type(website_data)}")
+            _log(f"DATA: {website_data}")
             self.save_file(
                 website_data, f"{domain}_knowledge"
             )
-            self._log(
+            _log(
                     "Website knowledge extracted successfully"
                 )
 
-            self._log(
+            _log(
                 "Website knowledge extracted successfully"
             )
 
 
 
-        self._log(
+        _log(
             json.dumps(
                 website_data,
                 indent=4
@@ -806,8 +723,8 @@ class SeoBot:
         if not os.path.exists(f"data/{domain}_business_analysis.json"):
             analyzer = create_analyzer_prompt(website_data)
 
-            self._log("Business Analyzer Prompt Created")
-            self._log(analyzer)
+            _log("Business Analyzer Prompt Created")
+            _log(analyzer)
 
             AI_response = self.ask_ai(analyzer, domain, "business_analysis")
 
@@ -848,8 +765,8 @@ class SeoBot:
         if not os.path.exists(keyword_db_file):
             seed = generate_keyword_seeds(business)
 
-            self._log("Working on keywords")
-            self._log(f"Keywords: {seed}")
+            _log("Working on keywords")
+            _log(f"Keywords: {seed}")
 
             google_trends = self.get_google_trends(seed)
 
@@ -858,13 +775,13 @@ class SeoBot:
 
             self.save_file(refined_keywords, f"{domain}_keyword_database")
 
-            self._log("Keywords generated successfully")
-            self._log(refined_keywords)
+            _log("Keywords generated successfully")
+            _log(refined_keywords)
         else:
             with open(keyword_db_file, "r", encoding="utf-8") as f:
                 refined_keywords = json.load(f)
 
-            self._log("Loaded existing keyword database")
+            _log("Loaded existing keyword database")
 
         return refined_keywords
 
@@ -879,7 +796,7 @@ class SeoBot:
         # --------------------------------------------
         if os.path.exists(topic_file):
 
-            self._log("Loading existing topics...")
+            _log("Loading existing topics...")
 
             with open(
                 topic_file,
@@ -893,24 +810,24 @@ class SeoBot:
         # Generate New Topics
         # --------------------------------------------
 
-        self._log("Creating SEO topics...")
+        _log("Creating SEO topics...")
 
         all_topics = []
 
         keyword_chunks = list(
             self.chunk_list(
                 keywords,
-                50
+                70
             )
         )
 
-        self._log(
+        _log(
             f"Total keyword batches: {len(keyword_chunks)}"
         )
 
         for index, chunk in enumerate(keyword_chunks, start=1):
 
-            self._log(
+            _log(
                 f"Processing batch {index}/{len(keyword_chunks)}"
             )
 
@@ -927,7 +844,7 @@ class SeoBot:
 
             if not AI_response:
 
-                self._log(
+                _log(
                     f"Batch {index} returned empty response."
                 )
 
@@ -947,14 +864,14 @@ class SeoBot:
 
                 else:
 
-                    self._log(
+                    _log(
                         "Invalid topic response."
                     )
 
             except Exception as e:
 
-                self._log(e)
-                self._log(AI_response)
+                _log(e)
+                _log(AI_response)
 
         # --------------------------------------------
         # Remove duplicate titles
@@ -977,7 +894,7 @@ class SeoBot:
             f"{domain}_topics"
         )
 
-        self._log(
+        _log(
             f"{len(final_topics)} Topics Created"
         )
 
@@ -1039,6 +956,9 @@ class SeoBot:
     def start_ai_browser(self):
 
         self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(headless=False)
+        self.context = self.browser.new_context()
+        self.page = self.context.new_page()
 
         self.browser = self.playwright.chromium.launch(
             headless=False
@@ -1064,7 +984,7 @@ class SeoBot:
         )
 
 
-        self._log(
+        _log(
             "AI Browser Started"
         )
 
@@ -1078,235 +998,24 @@ class SeoBot:
             self.playwright.stop()
 
 
-            self._log(
+            _log(
                 "AI Browser Closed"
             )
 
 
         except Exception as e:
 
-            self._log(
+            _log(
                 str(e)
             )
 
 
     def run_seo_audit(self, domain, website_data):
+        _log("Running SEO Auditor")
+        auditor = SEOAuditor()
+        _log("SEO Auditor finished")
+        return auditor.run(domain, website_data)
 
-        audit_file = f"data/{domain}_seo_audit.json"
-
-
-        # Load existing audit
-
-        if os.path.exists(audit_file):
-
-            self._log(
-                "Loading existing SEO audit..."
-            )
-
-            with open(
-                audit_file,
-                "r",
-                encoding="utf-8"
-            ) as f:
-
-                return json.load(f)
-
-
-
-        self._log(
-            "Running SEO audit..."
-        )
-
-
-        issues = []
-
-
-        pages = website_data.get(
-            "pages",
-            []
-        )
-
-
-        for page in pages:
-
-
-            url = page.get(
-                "url"
-            )
-
-
-            html = page.get(
-                "html",
-                ""
-            )
-
-
-            soup = BeautifulSoup(
-                html,
-                "html.parser"
-            )
-
-
-
-            # -----------------------
-            # Title Check
-            # -----------------------
-
-            title = soup.find(
-                "title"
-            )
-
-
-            if not title:
-
-                issues.append({
-
-                    "url":url,
-
-                    "issue":"Missing title tag",
-
-                    "severity":"High",
-
-                    "suggestion":
-                    "Add a unique SEO title between 50-60 characters"
-
-                })
-
-
-
-            # -----------------------
-            # Meta Description
-            # -----------------------
-
-            meta = soup.find(
-                "meta",
-                attrs={
-                    "name":"description"
-                }
-            )
-
-
-            if not meta:
-
-
-                issues.append({
-
-                    "url":url,
-
-                    "issue":
-                    "Missing meta description",
-
-                    "severity":
-                    "Medium",
-
-                    "suggestion":
-                    "Add a 150-160 character description"
-
-                })
-
-
-
-            # -----------------------
-            # H1 Check
-            # -----------------------
-
-            h1 = soup.find_all(
-                "h1"
-            )
-
-
-            if len(h1)==0:
-
-
-                issues.append({
-
-                    "url":url,
-
-                    "issue":
-                    "Missing H1 tag",
-
-                    "severity":
-                    "High",
-
-                    "suggestion":
-                    "Add one descriptive H1 containing the main keyword"
-
-                })
-
-
-            elif len(h1)>1:
-
-
-                issues.append({
-
-                    "url":url,
-
-                    "issue":
-                    "Multiple H1 tags",
-
-                    "severity":
-                    "Medium",
-
-                    "suggestion":
-                    "Keep only one H1 tag per page"
-
-                })
-
-
-
-            # -----------------------
-            # Image ALT
-            # -----------------------
-
-            images = soup.find_all(
-                "img"
-            )
-
-
-            for img in images:
-
-
-                if not img.get("alt"):
-
-
-                    issues.append({
-
-                        "url":url,
-
-                        "issue":
-                        "Image missing ALT",
-
-                        "severity":
-                        "Low",
-
-                        "suggestion":
-                        "Add descriptive alt text"
-
-                    })
-
-
-
-        result = {
-
-
-            "domain":domain,
-
-            "total_issues":
-                len(issues),
-
-            "issues":
-                issues
-
-        }
-
-
-        self.save_file(
-            result,
-            f"{domain}_seo_audit"
-        )
-
-
-        return result
 
 
     def generate_seo_recommendations(
@@ -1353,16 +1062,189 @@ class SeoBot:
         """
 
 
-            response=self.ask_ai(
+            response = self.ask_ai(
                 prompt,
                 domain,
                 "seo_recommendations"
             )
 
+            return response
 
-            return json.loads(
-                response
-            )
+
+    def get_or_create_blogs(self, domain, business, topics, limit=3):
+        """
+        Generate up to `limit` blog drafts from topics or load existing ones.
+        """
+
+        try:
+            blogs = self.load_file(f"{domain}_blogs")
+
+            if blogs:
+                _log(f"Loaded {len(blogs)} existing blogs")
+                return blogs
+
+        except Exception:
+            pass
+
+        blogs = []
+
+        total = min(limit, len(topics))
+
+        for index, topic in enumerate(topics[:limit], start=1):
+
+            title = topic.get("title", str(topic))
+
+            _log(f"Generating blog {index}/{total}: {title}")
+
+            prompt = f"""
+    You are an SEO copywriter.
+
+    Business Information:
+    {json.dumps(business, indent=2)}
+
+    Write a complete SEO-optimized blog post.
+
+    Topic:
+    {title}
+
+    Return ONLY valid JSON in this format:
+
+    {{
+        "title": "",
+        "slug": "",
+        "meta_title": "",
+        "meta_description": "",
+        "keywords": [],
+        "content": ""
+    }}
+    """
+
+            try:
+                blog = self.ask_ai(
+                    prompt,
+                    domain,
+                    f"_blog_{index}"
+                )
+
+                if blog:
+                    blogs.append(blog)
+
+            except Exception as e:
+                _log(f"Failed to generate blog '{title}': {e}")
+
+        self.save_file(
+            blogs,
+            f"blogs"
+        )
+
+        _log(f"{len(blogs)} blogs created")
+
+        return blogs
+
+
+    def check_all_blogs(self, domain, blogs):
+        """
+        Review all generated blogs for SEO quality.
+        """
+
+        checked_blogs = []
+
+        total = len(blogs)
+
+        for index, blog in enumerate(blogs, start=1):
+
+            title = blog.get("title", f"Blog {index}")
+
+            _log(f"Checking SEO {index}/{total}: {title}")
+
+            prompt = f"""
+    You are a senior SEO editor.
+
+    Review the following blog.
+
+    Improve:
+    - SEO
+    - Readability
+    - Grammar
+    - Heading structure
+    - Keyword placement
+    - Meta title
+    - Meta description
+    - Internal linking opportunities
+    - CTA
+
+    Return ONLY valid JSON.
+
+    Blog:
+
+    {json.dumps(blog, indent=2)}
+    """
+
+            try:
+
+                checked = self.ask_ai(
+                    prompt,
+                    domain,
+                    f"{domain}_checked_blog_{index}"
+                )
+
+                if checked:
+                    checked["status"] = "approved"
+                    checked_blogs.append(checked)
+
+            except Exception as e:
+                _log(f"SEO check failed: {title} : {e}")
+
+                blog["status"] = "failed"
+                checked_blogs.append(blog)
+
+        self.save_file(
+            checked_blogs,
+            f"{domain}_checked_blogs"
+        )
+
+        _log(f"{len(checked_blogs)} blogs checked")
+
+        return checked_blogs
+
+
+    def publish_pending_blogs(self, domain, blogs):
+        """
+        Publish all approved blogs.
+        """
+
+        published = []
+
+        for blog in blogs:
+
+            if blog.get("status") != "approved":
+                continue
+
+            try:
+
+                # Future:
+                # self.wordpress.publish(blog)
+
+                blog["published"] = True
+
+                published.append(blog)
+
+                _log(f"Published: {blog.get('title')}")
+
+            except Exception as e:
+
+                blog["published"] = False
+
+                _log(f"Publish failed: {blog.get('title')} : {e}")
+
+        self.save_file(
+            published,
+            f"{domain}_published_blogs"
+        )
+
+        _log(f"{len(published)} blogs published")
+
+        return published
 
 
 

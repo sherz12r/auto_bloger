@@ -6,6 +6,7 @@ import io
 import os
 import sys
 from datetime import datetime, timedelta
+from app_paths import get_app_dir
 
 
 def ensure_stdio():
@@ -65,3 +66,13 @@ def prune_old_logs(base_dir: str = ".", retention_days: int = RETENTION_DAYS) ->
             except OSError:
                 pass
 
+
+    
+def _log(message):
+    print(f"[Seo Blogger] {message}")
+
+    try:
+        SCRIPT_DIR = get_app_dir()
+        append_log_line(message, SCRIPT_DIR)
+    except OSError:
+        pass
