@@ -19,6 +19,9 @@ import pandas as pd
 from random import uniform
 from urllib.parse import urlparse
 from session_logger import _log
+from playwright.sync_api import TimeoutError
+import base64
+
 
 load_dotenv()
 
@@ -274,14 +277,326 @@ class SeoBot:
                 ensure_ascii=False
             )
 
-    
-    def ask_ai(self, content, domain, filename):
-    
+
+    def ask_ai(self, content, domain, filename, Image=False):
+
+        # ============================================================
+        # API MODE
+        # ============================================================
+        # If OPENAI_API_KEY exists, use OpenAI API.
+        # Otherwise, use the existing Playwright method below.
+        # ============================================================
+
+        api_key = os.environ.get("OPENAI_API_KEY")
+
+        if api_key:
+
+            print("OPENAI_API_KEY found.")
+            print("Using OpenAI API mode.")
+
+            try:
+                from openai import OpenAI
+
+                client = OpenAI(api_key=api_key)
+
+                # ----------------------------------------------------
+                # Ask GPT-5.5 for the response
+                # ----------------------------------------------------
+                #
+                # json_object is used because your existing code expects
+                # the response to be JSON and then does json.loads().
+                #
+                # Your original content is passed directly without
+                # changing it.
+                # ----------------------------------------------------
+
+                response = client.responses.create(
+                    model="gpt-5.5",
+                    input=content,
+                    text={
+                        "format": {
+                            "type": "json_object"
+                        }
+                    }
+                )
+
+                response = response.output_text
+
+                _log("writing ai response")
+                _log(response)
+
+                # ----------------------------------------------------
+                # Make sure response exists
+                # ----------------------------------------------------
+
+                if response is None:
+                    raise Exception("Response is None")
+
+                response = response.strip()
+
+                if not response:
+                    raise Exception("Response is empty")
+
+                # ----------------------------------------------------
+                # Remove Markdown code fences if present
+                # ----------------------------------------------------
+
+                if response.startswith("```"):
+                    lines = response.splitlines()
+
+                    # Remove opening fence (``` or ```json)
+                    if lines and lines[0].startswith("```"):
+                        lines = lines[1:]
+
+                    # Remove closing fence
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+
+                    response = "\n".join(lines).strip()
+
+                print("Response received:")
+                print(response)
+
+                # ----------------------------------------------------
+                # Convert JSON response into Python object
+                # ----------------------------------------------------
+
+                try:
+                    analysis = json.loads(response)
+
+                except json.JSONDecodeError as e:
+                    print("JSON parsing failed")
+                    print("Error:", e)
+                    print("Raw response:")
+                    print(repr(response))
+                    raise
+
+                # ----------------------------------------------------
+                # Save JSON using your existing function
+                # ----------------------------------------------------
+
+                self.save_file(
+                    analysis,
+                    f"{domain}_{filename}"
+                )
+
+                # ----------------------------------------------------
+                # IMAGE GENERATION
+                # ----------------------------------------------------
+                #
+                # Only generate an image when Image=True.
+                #
+                # We use the same content as the image prompt.
+                # ----------------------------------------------------
+
+
+                if Image:
+
+                    print("Image=True")
+                    print("Generating image using OpenAI API...")
+
+                    image_response = client.responses.create(
+                        model="gpt-5.5",
+                        input=content,
+                        tools=[
+                            {
+                                "type": "image_generation"
+                            }
+                        ]
+                    )
+
+                    # ------------------------------------------------
+                    # Find image_generation_call in the response
+                    # ------------------------------------------------
+
+                    image_data = None
+
+                    for item in image_response.output:
+
+                        print("Response item type:", getattr(item, "type", None))
+
+                        if getattr(item, "type", None) == "image_generation_call":
+
+                            # The SDK normally exposes the generated image
+                            # as the "result" field.
+                            image_data = getattr(item, "result", None)
+
+                            print("Image result found:", bool(image_data))
+
+                            if image_data:
+                                break
+
+                    # ------------------------------------------------
+                    # If no image was found, print complete response
+                    # ------------------------------------------------
+
+                    if not image_data:
+
+                        print("FULL OPENAI RESPONSE:")
+                        print(image_response)
+
+                        raise Exception(
+                            "Image generation completed but no image data was returned."
+                        )
+
+                    # ------------------------------------------------
+                    # Create pictures directory
+                    # ------------------------------------------------
+
+                    pictures_dir = os.path.join(
+                        "data",
+                        "pictures"
+                    )
+
+                    os.makedirs(
+                        pictures_dir,
+                        exist_ok=True
+                    )
+
+                    # ------------------------------------------------
+                    # Keep your existing filename variables
+                    # ------------------------------------------------
+
+                    filename = f"{domain}_{filename}.png"
+
+                    filepath = os.path.join(
+                        pictures_dir,
+                        filename
+                    )
+
+                    # ------------------------------------------------
+                    # Decode base64 image and save it
+                    # ------------------------------------------------
+
+                    try:
+
+                        image_bytes = base64.b64decode(image_data)
+
+                        with open(filepath, "wb") as f:
+                            f.write(image_bytes)
+
+                        print("Saved:", filepath)
+
+                    except Exception as e:
+
+                        print("Error decoding image:")
+                        print(e)
+
+                        raise
+
+                # if Image:
+
+                #     print("Image=True")
+                #     print("Generating image using OpenAI API...")
+
+                #     image_response = client.responses.create(
+                #         model="gpt-5.5",
+                #         input=content,
+                #         tools=[
+                #             {
+                #                 "type": "image_generation",
+                #                 "model": "gpt-image-2",
+                #                 "size": "1024x1024",
+                #                 "quality": "auto",
+                #                 "output_format": "png"
+                #             }
+                #         ]
+                #     )
+
+                #     # ------------------------------------------------
+                #     # Find the image_generation_call in the response
+                #     # ------------------------------------------------
+
+                #     image_data = None
+
+                #     for item in image_response.output:
+
+                #         if getattr(item, "type", None) == "image_generation_call":
+
+                #             image_data = getattr(item, "result", None)
+
+                #             if image_data:
+                #                 break
+
+                #     if not image_data:
+                #         raise Exception(
+                #             "Image generation completed but no image data was returned."
+                #         )
+
+                #     # ------------------------------------------------
+                #     # Create pictures directory
+                #     # ------------------------------------------------
+
+                #     pictures_dir = os.path.join(
+                #         "data",
+                #         "pictures"
+                #     )
+
+                #     os.makedirs(
+                #         pictures_dir,
+                #         exist_ok=True
+                #     )
+
+                #     # ------------------------------------------------
+                #     # Keep your existing filename variables
+                #     # ------------------------------------------------
+
+                #     filename = f"{domain}_{filename}.png"
+
+                #     filepath = os.path.join(
+                #         pictures_dir,
+                #         filename
+                #     )
+
+                #     # ------------------------------------------------
+                #     # Decode base64 image and save it
+                #     # ------------------------------------------------
+
+                #     with open(filepath, "wb") as f:
+                #         f.write(
+                #             base64.b64decode(image_data)
+                #         )
+
+                    print("Saved:", filepath)
+
+                # ----------------------------------------------------
+                # Return exactly as your original function did
+                # ----------------------------------------------------
+
+                return response
+
+            except Exception as e:
+
+                print("OpenAI API error:")
+                print(str(e))
+
+                # Do NOT silently switch to Playwright here.
+                #
+                # This is intentional:
+                # If an API key exists but the API fails, you should
+                # know about the API error rather than accidentally
+                # running the browser version.
+                #
+                raise
+
+        # ============================================================
+        # EXISTING PLAYWRIGHT MODE
+        # ============================================================
+        #
+        # No OPENAI_API_KEY was found.
+        #
+        # Your original method is used.
+        # ============================================================
+
+        print("OPENAI_API_KEY not found.")
+        print("Using existing ChatGPT browser mode.")
+
         with sync_playwright() as p:
 
             browser = p.chromium.launch(
                 headless=False
             )
+
             context = browser.new_context(
                 permissions=[
                     "clipboard-read",
@@ -289,14 +604,11 @@ class SeoBot:
                 ]
             )
 
-
             page = context.new_page()
-
 
             page.goto(
                 "https://chat.openai.com"
             )
-
 
             page.wait_for_timeout(5000)
 
@@ -304,12 +616,10 @@ class SeoBot:
                 "[contenteditable='true']"
             )
 
-
             editor.wait_for(
                 state="visible",
                 timeout=30000
             )
-
 
             # editor.fill(content)
             editor.click()
@@ -331,6 +641,7 @@ class SeoBot:
                 state="visible",
                 timeout=30000
             )
+
             copy_button.scroll_into_view_if_needed()
 
             copy_button.click()
@@ -341,10 +652,10 @@ class SeoBot:
                 "navigator.clipboard.readText()"
             )
 
-
             _log("writing ai response")
             _log(response)
-           # Make sure response exists
+
+            # Make sure response exists
             if response is None:
                 raise Exception("Response is None")
 
@@ -355,6 +666,7 @@ class SeoBot:
 
             # Remove Markdown code fences if present
             if response.startswith("```"):
+
                 lines = response.splitlines()
 
                 # Remove opening fence (``` or ```json)
@@ -374,24 +686,97 @@ class SeoBot:
                 analysis = json.loads(response)
 
             except json.JSONDecodeError as e:
+
                 print("JSON parsing failed")
                 print("Error:", e)
                 print("Raw response:")
                 print(repr(response))
+
                 raise
 
-            self.save_file(analysis, f"{domain}_{filename}")
+            self.save_file(
+                analysis,
+                f"{domain}_{filename}"
+            )
+
+            if Image:
+
+                # Wait until ChatGPT finishes generating
+                page.locator(
+                    'button[aria-label="Stop generating"]'
+                ).wait_for(
+                    state="hidden"
+                )
+
+                # Wait until Download button exists
+                download_btn = page.locator(
+                    'button[aria-label="Download"]'
+                ).last
+
+                download_btn.wait_for(
+                    state="visible",
+                    timeout=120000
+                )
+
+                pictures_dir = os.path.join(
+                    "data",
+                    "pictures"
+                )
+
+                os.makedirs(
+                    pictures_dir,
+                    exist_ok=True
+                )
+
+                filename = f"{domain}_{filename}.png"
+
+                filepath = os.path.join(
+                    pictures_dir,
+                    filename
+                )
+
+                # Download image
+                with page.expect_download() as download_info:
+
+                    download_btn.click()
+
+                download = download_info.value
+
+                download.save_as(
+                    filepath
+                )
+
+                print("Saved:", filepath)
 
             browser.close()
 
             return response
-    # def ask_ai(self, content, domain, filename):
-    #         if self.browser is None or not self.browser.is_connected():
-    #             self.start_ai_browser()
-            
-    #         # with sync_playwright() as p:
 
-    #         page = self.page
+
+    # def ask_ai(self, content, domain, filename, Image=False):
+    
+    #     with sync_playwright() as p:
+
+    #         browser = p.chromium.launch(
+    #             headless=False
+    #         )
+    #         context = browser.new_context(
+    #             permissions=[
+    #                 "clipboard-read",
+    #                 "clipboard-write"
+    #             ]
+    #         )
+
+
+    #         page = context.new_page()
+
+
+    #         page.goto(
+    #             "https://chat.openai.com"
+    #         )
+
+
+    #         page.wait_for_timeout(5000)
 
     #         editor = page.locator(
     #             "[contenteditable='true']"
@@ -410,27 +795,15 @@ class SeoBot:
     #         page.keyboard.insert_text(content)
 
     #         # time.sleep(3)
-    #         page.wait_for_timeout(2000)
+    #         page.wait_for_timeout(5000)
 
     #         page.keyboard.press("Enter")
 
     #         page.wait_for_timeout(10000)
 
-    #         # copy_button = page.locator(
-    #         #     'button[aria-label="Copy response"]'
-    #         # ).last
-    #         copy_buttons = page.locator(
-    #             'button[aria-label="Copy response"]:visible'
-    #         )
-
-    #         count = copy_buttons.count()
-
-    #         _log(f"Copy buttons found: {count}")
-
-    #         if count == 0:
-    #             raise Exception("No copy button found")
-
-    #         copy_button = copy_buttons.nth(count - 1)
+    #         copy_button = page.locator(
+    #             'button[aria-label="Copy response"]'
+    #         ).last
 
     #         copy_button.wait_for(
     #             state="visible",
@@ -449,33 +822,73 @@ class SeoBot:
 
     #         _log("writing ai response")
     #         _log(response)
-
-    #         # Remove markdown code blocks from AI response
-    #         response = response.strip()
-
-    #         if response.startswith("```json"):
-    #             response = response.replace("```json", "", 1)
-
-    #         if response.endswith("```"):
-    #             response = response[:-3]
+    #        # Make sure response exists
+    #         if response is None:
+    #             raise Exception("Response is None")
 
     #         response = response.strip()
 
+    #         if not response:
+    #             raise Exception("Response is empty")
+
+    #         # Remove Markdown code fences if present
+    #         if response.startswith("```"):
+    #             lines = response.splitlines()
+
+    #             # Remove opening fence (``` or ```json)
+    #             if lines and lines[0].startswith("```"):
+    #                 lines = lines[1:]
+
+    #             # Remove closing fence
+    #             if lines and lines[-1].startswith("```"):
+    #                 lines = lines[:-1]
+
+    #             response = "\n".join(lines).strip()
+
+    #         print("Response received:")
+    #         print(response)
 
     #         try:
     #             analysis = json.loads(response)
 
     #         except json.JSONDecodeError as e:
-    #             _log(f"JSON Error: {e}")
-    #             _log(repr(response))
-    #             return {}
+    #             print("JSON parsing failed")
+    #             print("Error:", e)
+    #             print("Raw response:")
+    #             print(repr(response))
+    #             raise
 
-    #         self.save_file(
-    #             analysis,
-    #             f"{domain}_{filename}"
-    #         )
+    #         self.save_file(analysis, f"{domain}_{filename}")
+    #         if Image:
+    #             # Wait until ChatGPT finishes generating
+    #             page.locator('button[aria-label="Stop generating"]').wait_for(state="hidden")
 
-    #         return analysis
+    #             # Wait until Download button exists
+    #             download_btn = page.locator('button[aria-label="Download"]').last
+
+    #             download_btn.wait_for(
+    #                 state="visible",
+    #                 timeout=120000
+    #             )
+    #             pictures_dir = os.path.join("data", "pictures")
+    #             os.makedirs(pictures_dir, exist_ok=True)
+    #             filename = f"{domain}_{filename}.png"
+    #             filepath = os.path.join(pictures_dir, filename)
+
+
+    #             # Download image
+    #             with page.expect_download() as download_info:
+    #                 download_btn.click()
+
+    #             download = download_info.value
+    #             download.save_as(filepath)
+
+    #             print("Saved:", filepath)
+            
+
+    #         browser.close()
+
+    #         return response
 
               
 
@@ -1011,10 +1424,52 @@ class SeoBot:
 
 
     def run_seo_audit(self, domain, website_data):
-        _log("Running SEO Auditor")
+
+        audit_file = os.path.join(
+            "data",
+            f"{domain}_seo_audit"
+        )
+
+        # Check if SEO audit already exists
+        if os.path.exists(audit_file):
+
+            _log(f"SEO audit already exists: {audit_file}")
+            _log("Skipping SEO Auditor")
+
+            # If the file contains JSON, load and return it
+            with open(audit_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+
+        # ------------------------------------------------
+        # SEO audit does not exist - run auditor
+        # ------------------------------------------------
+
+        _log("SEO audit not found. Running SEO Auditor")
+
         auditor = SEOAuditor()
+
+        result = auditor.run(domain, website_data)
+
         _log("SEO Auditor finished")
-        return auditor.run(domain, website_data)
+
+        # ------------------------------------------------
+        # Save audit result
+        # ------------------------------------------------
+
+        with open(audit_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=4, ensure_ascii=False)
+
+        _log(f"SEO audit saved: {audit_file}")
+
+        return result
+
+
+
+    # def run_seo_audit(self, domain, website_data):
+    #     _log("Running SEO Auditor")
+    #     auditor = SEOAuditor()
+    #     _log("SEO Auditor finished")
+    #     return auditor.run(domain, website_data)
 
 
 
@@ -1097,12 +1552,14 @@ class SeoBot:
             _log(f"Generating blog {index}/{total}: {title}")
 
             prompt = f"""
-    You are an SEO copywriter.
+    You are an SEO expert.
 
     Business Information:
     {json.dumps(business, indent=2)}
 
     Write a complete SEO-optimized blog post.
+    After finishing the blog,
+    generate a featured image that represents the article.
 
     Topic:
     {title}
@@ -1123,7 +1580,8 @@ class SeoBot:
                 blog = self.ask_ai(
                     prompt,
                     domain,
-                    f"_blog_{index}"
+                    f"_blog_{index}",
+                    True
                 )
 
                 if blog:

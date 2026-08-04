@@ -5,3 +5,4 @@ crawl4ai
 playwright
 pytrends
 urllib3==1.26.18
+openai
